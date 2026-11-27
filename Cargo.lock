@@ -854,7 +854,6 @@ name = "crita-playground"
 version = "0.1.0"
 dependencies = [
  "crita-brush-engine",
- "crita-render",
  "slint",
  "slint-build",
 ]
