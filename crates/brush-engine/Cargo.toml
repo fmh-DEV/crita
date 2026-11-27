@@ -1,0 +1,9 @@
+[package]
+name = "crita-brush-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Crita brush engine core: auto-brush mask, dab spacing, per-pixel smudge mixing. Algorithms ported from Krita (GPL)."
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# phase 1: zero dependencies on purpose. Serialization (.cbrush/.kpp) comes later.

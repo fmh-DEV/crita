@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "apps/*"]
+
+# Phase 1: brush engine core + CPU compositor (oracle seed) + minimal playground.
+# Golden rules (see AGENTS.md):
+# - core crates (brush-engine, render) MUST NOT depend on GUI crates
+# - brush engine stays CPU-only; no GUI deps here by construction
