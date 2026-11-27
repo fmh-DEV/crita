@@ -1,0 +1,9 @@
+[package]
+name = "crita-render"
+version = "0.1.0"
+edition = "2021"
+description = "CPU reference compositor (oracle). The wgpu compositor will implement the same contract later."
+license = "GPL-3.0-or-later"
+
+[dependencies]
+crita-brush-engine = { path = "../brush-engine" }
