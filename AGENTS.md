@@ -52,6 +52,10 @@ questions live in docs/decisions/ (ADRs).
 - Brush engines: one faithful port per Krita paint op, never merged;
   identified by the same paintopid as .kpp (see ADR-0002). Pixel engine
   ported (core), colorsmudge is a WIP stub.
+- Pluggable engines: static factory registry (no dynamic plugins — Rust has
+  no stable ABI). Engines from other ecosystems (PhotoCraft/Photoshop .abr,
+  eventual CSP) enter as adapter crates reading their native preset format.
+  PaintOp consumes PenSample. See ADR-0006.
 - Colors: RGB pipeline now; CMYK via lcms2 planned for print export.
 - Repo layout: apps/ for binaries, crates/ for libraries; one crate per
   concern, created with its first implementation (no upfront scaffolding).
