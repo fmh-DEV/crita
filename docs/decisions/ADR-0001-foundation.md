@@ -1,5 +1,5 @@
 # ADR-0001: Foundation decisions
-- Date: 2026-11-25 | Status: Accepted (GUI provisional, pending spike)
+- Date: 2026-11-25 | Status: Accepted (item 5 substituído pelo ADR-0003)
 
 ## Context
 App de quadrinhos/manga estilo CSP com brush engine estilo Krita, desktop + tablet,
@@ -10,7 +10,8 @@ roteiro integrado. Protótipo brush-core validou a matemática dos brushes.
 2. Separação núcleo/GUI (modelo PhotoCraft) via command registry tipado
 3. Render: wgpu + oráculo CPU; engine de brush na CPU
 4. Contrato de performance: &lt;30 ms em telas 120-160 Hz, dirty rect desde o dia 1
-5. GUI: Slint candidata — PROVISÓRIA até spike no S10 Ultra; fallback egui; Qt rejeitado
+5. GUI: egui (eframe + wgpu) desktop-first — ver ADR-0003; Slint rejeitado
+   (sem pressão de stylus), Qt rejeitado; mobile adiado
 6. Docking custom (dockable/floating/hidden + snap), estado no núcleo
 7. Input normalizado em PenSample neutro por plataforma
 8. Presets .cbrush nativo + leitura direta de .kpp (sem importação)

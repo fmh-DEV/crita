@@ -41,18 +41,27 @@ questions live in docs/decisions/ (ADRs).
 
 - License: GPL-3.0-or-later (imports/port from Krita).
 - Compositor: wgpu (confirmed), with CPU oracle for testing.
-- GUI: Slint is the candidate — PENDING hardware spike on Android
-  (Samsung S10 Ultra): stylus pressure via init_with_event_listener probe,
-  input latency, require_wgpu_30 support. Fallback: egui/egui_stack
-  (desktop-first). Qt rejected.
+- GUI: egui (eframe + wgpu) desktop-first — Slint rejected (no stylus
+  pressure support, verified in 1.19.1). Mobile toolkit deferred
+  (Flutter candidate). Qt rejected. See ADR-0003.
 - Docking: custom dock manager (3 states per panel: docked/floating/hidden,
   edge snap), modeled after CSP Studio Mode. Dock state lives in the core
   (workspace crate) as data + typed commands, not in GUI code.
 - Brush presets: native format (.cbrush) + direct reading of Krita .kpp
   (no import step).
+- Brush engines: one faithful port per Krita paint op, never merged;
+  identified by the same paintopid as .kpp (see ADR-0002). Pixel engine
+  ported (core), colorsmudge is a WIP stub.
 - Colors: RGB pipeline now; CMYK via lcms2 planned for print export.
+- Repo layout: apps/ for binaries, crates/ for libraries; one crate per
+  concern, created with its first implementation (no upfront scaffolding).
+  See ADR-0004.
 - Input abstraction: all pen input normalizes to a platform-neutral
   PenSample { pos, pressure, tilt, rotation, tip_type } in the core.
+  Position comes from the windowing layer; a native input crate
+  (crates/input, modeled on PhotoCraft's photocraft-tablet, Apache-2.0)
+  supplies pressure/tilt/rotation/eraser beside winit. Tilt normalized
+  -1..1 (GIMP convention). See ADR-0003.
 
 ## Conventions
 
