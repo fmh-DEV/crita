@@ -41,9 +41,13 @@ questions live in docs/decisions/ (ADRs).
 
 - License: GPL-3.0-or-later (imports/port from Krita).
 - Compositor: wgpu (confirmed), with CPU oracle for testing.
-- GUI: egui (eframe + wgpu) desktop-first — Slint rejected (no stylus
-  pressure support, verified in 1.19.1). Mobile toolkit deferred
-  (Flutter candidate). Qt rejected. See ADR-0003.
+- GUI: egui (eframe + wgpu) — Slint rejected (no stylus pressure support,
+  verified in 1.19.1). Qt rejected. Mobile (Android/iPad) is an architecture
+  target on the SAME egui/eframe shell (dense CSP Studio Mode-style UI):
+  tablet-compatible design constraints apply from now (no hover-only /
+  right-click-only interactions, generous touch targets); bring-up is
+  Android-first (MotionEvent via crates/input) after the desktop compositor,
+  iPad later. Flutter rejected as a separate toolkit. See ADR-0003.
 - Docking: custom dock manager (3 states per panel: docked/floating/hidden,
   edge snap), modeled after CSP Studio Mode. Dock state lives in the core
   (workspace crate) as data + typed commands, not in GUI code.
