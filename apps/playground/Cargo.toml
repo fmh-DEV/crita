@@ -2,12 +2,9 @@
 name = "crita-playground"
 version = "0.1.0"
 edition = "2021"
-description = "Minimal Slint canvas to feel-test the brush engine (phase 1+2 merged)"
+description = "Minimal egui canvas to feel-test the brush engine (phase 1+2 merged)"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-slint = "1"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu"] }
 crita-brush-engine = { path = "../../crates/brush-engine" }
-
-[build-dependencies]
-slint-build = "1"

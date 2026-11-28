@@ -1,15 +1,10 @@
-//! crita-playground — canvas mínimo (Slint desktop) pra sentir o brush engine.
+//! crita-playground — canvas mínimo (eframe/egui + wgpu) pra sentir o brush engine.
 //! Mede o tempo do line_to: é o começo do nosso contrato de latência
-//! (pen-to-pixel < ~30 ms em telas 120-160 Hz — ver ADR-0001).
-#![allow(unused_crate_dependencies)]
-
-slint::include_modules!();
+//! (pen-to-pixel < ~30 ms em telas 120-160 Hz — ver ADR-0001 e golden rule 3).
 
 use crita_brush_engine::{Image, PaintOp, PenSample, PixelBrush, PixelBrushParams, Rgba};
-use slint::{Image as SImage, SharedPixelBuffer};
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::time::Instant;
+use eframe::egui;
+use std::time::{Duration, Instant};
 
 const W: usize = 1024;
 const H: usize = 640;
@@ -43,159 +38,209 @@ impl State {
     }
 }
 
-fn current_brush(ui: &AppWindow) -> Box<dyn PaintOp> {
+struct PlaygroundApp {
+    state: State,
+    texture: egui::TextureHandle,
+    dirty: bool,
+    brush_size: f32,
+    brush_hardness: f32,
+    brush_opacity: f32,
+    brush_spacing: f32,
+    brush_color: egui::Color32,
+    stats: String,
+    stats_since: Instant,
+}
+
+impl PlaygroundApp {
+    fn new(cc: &eframe::CreationContext) -> PlaygroundApp {
+        let state = State::new();
+        let texture = cc.egui_ctx.load_texture(
+            "canvas",
+            color_image(&state.canvas),
+            egui::TextureOptions::LINEAR,
+        );
+        PlaygroundApp {
+            state,
+            texture,
+            dirty: false,
+            brush_size: 24.0,
+            brush_hardness: 80.0,
+            brush_opacity: 100.0,
+            brush_spacing: 15.0,
+            brush_color: egui::Color32::from_rgb(0x14, 0x14, 0x1a),
+            stats: "pinte com o mouse".to_string(),
+            stats_since: Instant::now(),
+        }
+    }
+
     // configuração tipada por engine (o brush editor conhece a engine que
     // edita, como os option widgets do Krita — ver ADR-0006, item 2)
-    Box::new(PixelBrush::new(PixelBrushParams {
-        size: ui.get_brush_size(),
-        hardness: ui.get_brush_hardness() / 100.0,
-        opacity: ui.get_brush_opacity() / 100.0,
-        spacing: ui.get_brush_spacing() / 100.0,
-        color: Rgba::from_hex(&ui.get_brush_color()),
-    }))
-}
-
-fn copy_to_buffer(canvas: &Image, buf: &mut SharedPixelBuffer<slint::Rgb8Pixel>) {
-    let pixels = buf.make_mut_slice();
-    for (i, px) in canvas.data.iter().enumerate() {
-        pixels[i] = slint::Rgb8Pixel {
-            r: (px.r.clamp(0.0, 1.0) * 255.0) as u8,
-            g: (px.g.clamp(0.0, 1.0) * 255.0) as u8,
-            b: (px.b.clamp(0.0, 1.0) * 255.0) as u8,
-        };
-    }
-}
-
-fn map_coords(x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
-    (x * W as f32 / w.max(1.0), y * H as f32 / h.max(1.0))
-}
-
-fn main() -> Result<(), slint::PlatformError> {
-    let ui = std::rc::Rc::new(AppWindow::new()?);
-    let state = Rc::new(RefCell::new(State::new()));
-    let buffer = Rc::new(RefCell::new(SharedPixelBuffer::<slint::Rgb8Pixel>::new(W as u32, H as u32)));
-
-    // imagem inicial
-    {
-        let st = state.borrow();
-        let mut b = buffer.borrow_mut();
-        copy_to_buffer(&st.canvas, &mut b);
-        ui.set_canvas_image(SImage::from_rgb8(b.clone()));
+    fn current_brush(&self) -> Box<dyn PaintOp> {
+        Box::new(PixelBrush::new(PixelBrushParams {
+            size: self.brush_size,
+            hardness: self.brush_hardness / 100.0,
+            opacity: self.brush_opacity / 100.0,
+            spacing: self.brush_spacing / 100.0,
+            color: Rgba::rgb(
+                self.brush_color.r() as f32 / 255.0,
+                self.brush_color.g() as f32 / 255.0,
+                self.brush_color.b() as f32 / 255.0,
+            ),
+        }))
     }
 
-    // pointer down: snapshot pra undo + primeiro dab
-    {
-        let state = state.clone();
-        let buffer = buffer.clone();
-        let ui_weak = ui.as_weak();
-        ui.on_pointer_down(move |x, y, w, h| {
-            let ui = ui_weak.upgrade().unwrap();
-            let mut st = state.borrow_mut();
-            st.snapshot();
-            let mut brush = current_brush(&ui);
-            let (cx, cy) = map_coords(x, y, w, h);
-            brush.line_to(&mut st.canvas, &PenSample::mouse(cx, cy));
-            st.brush = Some(brush);
-            let mut b = buffer.borrow_mut();
-            copy_to_buffer(&st.canvas, &mut b);
-            ui.set_canvas_image(SImage::from_rgb8(b.clone()));
-        });
-    }
+    fn panel(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("panel").exact_size(230.0).show(ui, |ui| {
+            ui.add_space(10.0);
+            ui.heading("crita playground");
+            ui.add_space(6.0);
+            ui.add(egui::Slider::new(&mut self.brush_size, 2.0..=120.0).text("tamanho"));
+            ui.add(egui::Slider::new(&mut self.brush_hardness, 0.0..=100.0).text("dureza %"));
+            ui.add(egui::Slider::new(&mut self.brush_opacity, 1.0..=100.0).text("opacidade %"));
+            ui.add(egui::Slider::new(&mut self.brush_spacing, 2.0..=100.0).text("espaçamento %"));
+            ui.add_space(6.0);
 
-    // pointer move: pinta + mede tempo do line_to (parte do engine na latência)
-    {
-        let state = state.clone();
-        let buffer = buffer.clone();
-        let ui_weak = ui.as_weak();
-        ui.on_pointer_move(move |x, y, w, h| {
-            let ui = ui_weak.upgrade().unwrap();
-            let t0 = Instant::now();
-            {
-                let mut st = state.borrow_mut();
-                let st = &mut *st;
-                if let Some(brush) = st.brush.as_mut() {
-                    let (cx, cy) = map_coords(x, y, w, h);
-                    brush.line_to(&mut st.canvas, &PenSample::mouse(cx, cy));
-                    let ms = t0.elapsed().as_secs_f32() * 1000.0;
-                    st.line_ms_sum += ms;
-                    st.line_n += 1;
-                    if ms > st.line_ms_worst {
-                        st.line_ms_worst = ms;
+            ui.horizontal(|ui| {
+                for c in [
+                    egui::Color32::from_rgb(0x14, 0x14, 0x1a),
+                    egui::Color32::from_rgb(0xc0, 0x39, 0x2b),
+                    egui::Color32::from_rgb(0x2b, 0x50, 0xc0),
+                    egui::Color32::from_rgb(0x1e, 0x8a, 0x4c),
+                    egui::Color32::from_rgb(0xe6, 0x7e, 0x22),
+                ] {
+                    let b = egui::Button::new("").fill(c).min_size(egui::vec2(26.0, 26.0));
+                    if ui.add(b).clicked() {
+                        self.brush_color = c;
                     }
                 }
-            }
-            let st = state.borrow();
-            let mut b = buffer.borrow_mut();
-            copy_to_buffer(&st.canvas, &mut b);
-            ui.set_canvas_image(SImage::from_rgb8(b.clone()));
-        });
-    }
+            });
+            ui.color_edit_button_srgba(&mut self.brush_color);
+            ui.add_space(6.0);
 
-    // pointer up: fecha stroke
-    {
-        let state = state.clone();
-        ui.on_pointer_up(move || {
-            state.borrow_mut().brush = None;
-        });
-    }
-
-    // desfazer / limpar
-    {
-        let state = state.clone();
-        let buffer = buffer.clone();
-        let ui_weak = ui.as_weak();
-        ui.on_undo(move || {
-            let ui = ui_weak.upgrade().unwrap();
-            let mut st = state.borrow_mut();
-            if let Some(snap) = st.undo_stack.pop() {
-                st.canvas.data = snap;
-            }
-            let mut b = buffer.borrow_mut();
-            copy_to_buffer(&st.canvas, &mut b);
-            ui.set_canvas_image(SImage::from_rgb8(b.clone()));
-        });
-    }
-    {
-        let state = state.clone();
-        let buffer = buffer.clone();
-        let ui_weak = ui.as_weak();
-        ui.on_clear(move || {
-            let ui = ui_weak.upgrade().unwrap();
-            let mut st = state.borrow_mut();
-            st.snapshot();
-            st.canvas = Image::new(W, H, Rgba::WHITE);
-            st.brush = None;
-            let mut b = buffer.borrow_mut();
-            copy_to_buffer(&st.canvas, &mut b);
-            ui.set_canvas_image(SImage::from_rgb8(b.clone()));
-        });
-    }
-
-    // timer de estatísticas
-    {
-        let ui_weak = ui.as_weak();
-        let state = state.clone();
-        let timer = slint::Timer::default();
-        timer.start(
-            slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(500),
-            move || {
-                if let Some(ui) = ui_weak.upgrade() {
-                    let mut st = state.borrow_mut();
-                    let avg = if st.line_n > 0 { st.line_ms_sum / st.line_n as f32 } else { 0.0 };
-                    ui.set_stats(format!(
-                        "engine: media {:.2} ms/linha | pior {:.2} ms | n={}
-(meta < 8 ms em 120 Hz; undo: {} niveis)",
-                        avg, st.line_ms_worst, st.line_n, st.undo_stack.len()
-                    ).into());
-                    st.line_ms_sum = 0.0;
-                    st.line_ms_worst = 0.0;
-                    st.line_n = 0;
+            ui.horizontal(|ui| {
+                if ui.button("desfazer").clicked() {
+                    if let Some(snap) = self.state.undo_stack.pop() {
+                        self.state.canvas.data = snap;
+                        self.dirty = true;
+                    }
                 }
-            },
-        );
-        std::mem::forget(timer);
+                if ui.button("limpar").clicked() {
+                    self.state.snapshot();
+                    self.state.canvas = Image::new(W, H, Rgba::WHITE);
+                    self.state.brush = None;
+                    self.dirty = true;
+                }
+            });
+            ui.add_space(6.0);
+            ui.label(&self.stats);
+        });
     }
 
-    ui.run()
+    fn canvas(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show(ui, |ui| {
+            let avail = ui.available_size();
+            let scale = (avail.x / W as f32).min(avail.y / H as f32).max(0.01);
+            let size = egui::vec2(W as f32 * scale, H as f32 * scale);
+            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
+            ui.painter().image(
+                self.texture.id(),
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+
+            let to_canvas = |pos: egui::Pos2| {
+                (
+                    (pos.x - rect.min.x) * W as f32 / rect.width().max(1.0),
+                    (pos.y - rect.min.y) * H as f32 / rect.height().max(1.0),
+                )
+            };
+
+            if response.drag_started() {
+                if let Some(pos) = response.interact_pointer_pos() {
+                    self.state.snapshot();
+                    let mut brush = self.current_brush();
+                    let (cx, cy) = to_canvas(pos);
+                    brush.line_to(&mut self.state.canvas, &PenSample::mouse(cx, cy));
+                    self.state.brush = Some(brush);
+                    self.dirty = true;
+                }
+            }
+            if response.dragged() {
+                if let (Some(brush), Some(pos)) =
+                    (self.state.brush.as_mut(), response.interact_pointer_pos())
+                {
+                    let (cx, cy) = to_canvas(pos);
+                    let t0 = Instant::now();
+                    brush.line_to(&mut self.state.canvas, &PenSample::mouse(cx, cy));
+                    let ms = t0.elapsed().as_secs_f32() * 1000.0;
+                    self.state.line_ms_sum += ms;
+                    self.state.line_n += 1;
+                    if ms > self.state.line_ms_worst {
+                        self.state.line_ms_worst = ms;
+                    }
+                    self.dirty = true;
+                }
+            }
+            if response.drag_stopped() {
+                self.state.brush = None;
+            }
+        });
+    }
+}
+
+impl eframe::App for PlaygroundApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.panel(ui);
+        self.canvas(ui);
+
+        // upload só quando o canvas mudou (o compositor real fará dirty-rect;
+        // aqui a textura inteira só sobe nos frames em que houve pintura)
+        if self.dirty {
+            self.texture
+                .set(color_image(&self.state.canvas), egui::TextureOptions::LINEAR);
+            self.dirty = false;
+        }
+
+        if self.stats_since.elapsed() >= Duration::from_millis(500) {
+            let st = &mut self.state;
+            let avg = if st.line_n > 0 { st.line_ms_sum / st.line_n as f32 } else { 0.0 };
+            self.stats = format!(
+                "engine: media {:.2} ms/linha | pior {:.2} ms | n={}\n(meta < 8 ms em 120 Hz; undo: {} niveis)",
+                avg,
+                st.line_ms_worst,
+                st.line_n,
+                st.undo_stack.len()
+            );
+            st.line_ms_sum = 0.0;
+            st.line_ms_worst = 0.0;
+            st.line_n = 0;
+            self.stats_since = Instant::now();
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(500));
+    }
+}
+
+fn color_image(canvas: &Image) -> egui::ColorImage {
+    let pixels = canvas
+        .data
+        .iter()
+        .map(|px| {
+            let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+            egui::Color32::from_rgb(c(px.r), c(px.g), c(px.b))
+        })
+        .collect();
+    egui::ColorImage::new([W, H], pixels)
+}
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "crita playground",
+        options,
+        Box::new(|cc| Ok(Box::new(PlaygroundApp::new(cc)))),
+    )
 }
